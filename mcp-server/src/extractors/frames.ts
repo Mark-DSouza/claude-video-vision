@@ -121,7 +121,10 @@ export async function extractFrames(
     // -to is silently ignored here under -ss input seeking; -t (duration) works.
     const startSec = startTime ? parseHMS(startTime) : 0;
     const endSec = parseHMS(endTime);
-    const duration = Math.max(0, endSec - startSec);
+    const duration = endSec - startSec;
+    if (duration <= 0) {
+      throw new Error(`endTime (${endTime}) must be after startTime (${startTime ?? "00:00:00"})`);
+    }
     args.push("-t", String(duration));
   }
 

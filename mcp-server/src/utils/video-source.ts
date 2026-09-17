@@ -169,10 +169,13 @@ function findDownloadedPath(stdout: string): string | null {
   return null;
 }
 
+const INCOMPLETE_DOWNLOAD_MARKERS = [".part", ".ytdl", ".temp"];
+
 export function findCachedDownload(prefix: string, downloadsDir: string = DOWNLOADS_DIR): string | null {
   if (!existsSync(downloadsDir)) return null;
   for (const entry of readdirSync(downloadsDir)) {
     if (!entry.startsWith(`${prefix}-`)) continue;
+    if (INCOMPLETE_DOWNLOAD_MARKERS.some((marker) => entry.includes(marker))) continue;
     const filePath = join(downloadsDir, entry);
     try {
       if (statSync(filePath).isFile()) return filePath;
@@ -188,7 +191,7 @@ const inFlightDownloads = new Map<string, Promise<string>>();
 
 export async function downloadYouTubeVideo(
   url: string,
-  downloader: (url: string, prefix: string) => Promise<string> = performYouTubeDownload,
+  downloader: (url: string, prefix: string, downloadsDir: string) => Promise<string> = performYouTubeDownload,
   downloadsDir: string = DOWNLOADS_DIR,
 ): Promise<string> {
   mkdirSync(downloadsDir, { recursive: true });
@@ -202,14 +205,14 @@ export async function downloadYouTubeVideo(
   const existing = inFlightDownloads.get(dedupeKey);
   if (existing) return existing;
 
-  const downloadPromise = downloader(url, prefix).finally(() => {
+  const downloadPromise = downloader(url, prefix, downloadsDir).finally(() => {
     inFlightDownloads.delete(dedupeKey);
   });
   inFlightDownloads.set(dedupeKey, downloadPromise);
   return downloadPromise;
 }
 
-async function performYouTubeDownload(url: string, prefix: string): Promise<string> {
+async function performYouTubeDownload(url: string, prefix: string, downloadsDir: string): Promise<string> {
   const outputTemplate = `${prefix}-%(id)s.%(ext)s`;
 
   try {
@@ -224,7 +227,7 @@ async function performYouTubeDownload(url: string, prefix: string): Promise<stri
         "-f",
         "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bv*+ba/b",
         "--paths",
-        DOWNLOADS_DIR,
+        downloadsDir,
         "-o",
         outputTemplate,
         "--print",

@@ -104,5 +104,27 @@ describe("frame extraction", () => {
       });
       expect(result.length).toBe(6);
     });
+
+    it("rejects an endTime at or before startTime instead of silently extracting nothing", async () => {
+      await expect(
+        extractFrames(LONG_FIXTURE, {
+          fps: 2,
+          resolution: 256,
+          outputDir: OUT_DIR,
+          startTime: "00:00:07",
+          endTime: "00:00:04",
+        }),
+      ).rejects.toThrow(/endTime/);
+
+      await expect(
+        extractFrames(LONG_FIXTURE, {
+          fps: 2,
+          resolution: 256,
+          outputDir: OUT_DIR,
+          startTime: "00:00:05",
+          endTime: "00:00:05",
+        }),
+      ).rejects.toThrow(/endTime/);
+    });
   });
 });

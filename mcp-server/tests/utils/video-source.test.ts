@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { existsSync, mkdirSync, writeFileSync, rmSync, utimesSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
@@ -120,6 +120,41 @@ discipline &amp; the one nobody is building for yet.
       try {
         expect(findCachedDownload("abc123def456", dir)).toBe(file);
         expect(findCachedDownload("nonexistent-prefix", dir)).toBeNull();
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
+    it("does not treat an interrupted yt-dlp .part/.ytdl/.temp file as cached", () => {
+      const dir = join(tmpdir(), `cvv-cache-incomplete-${Date.now()}`);
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, "abc123def456-dQw4w9WgXcQ.mp4.part"), "truncated");
+      writeFileSync(join(dir, "abc123def456-dQw4w9WgXcQ.f137.mp4.ytdl"), "{}");
+
+      try {
+        expect(findCachedDownload("abc123def456", dir)).toBeNull();
+
+        const completeFile = join(dir, "abc123def456-dQw4w9WgXcQ.mp4");
+        writeFileSync(completeFile, "real video bytes");
+        expect(findCachedDownload("abc123def456", dir)).toBe(completeFile);
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
+    it("passes the caller's downloadsDir through to the downloader", async () => {
+      const dir = join(tmpdir(), `cvv-cache-dir-passthrough-${Date.now()}`);
+      mkdirSync(dir, { recursive: true });
+      const url = "https://youtu.be/dQw4w9WgXcQ";
+      const downloader = vi.fn(async (_url: string, prefix: string, downloadsDir: string) => {
+        const file = join(downloadsDir, `${prefix}-dQw4w9WgXcQ.mp4`);
+        writeFileSync(file, "downloaded bytes");
+        return file;
+      });
+
+      try {
+        await downloadYouTubeVideo(url, downloader, dir);
+        expect(downloader).toHaveBeenCalledWith(url, expect.any(String), dir);
       } finally {
         rmSync(dir, { recursive: true, force: true });
       }
