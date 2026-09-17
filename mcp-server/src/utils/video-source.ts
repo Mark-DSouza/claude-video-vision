@@ -169,10 +169,53 @@ function findDownloadedPath(stdout: string): string | null {
   return null;
 }
 
-async function downloadYouTubeVideo(url: string): Promise<string> {
-  mkdirSync(DOWNLOADS_DIR, { recursive: true });
+export function findCachedDownload(prefix: string, downloadsDir: string = DOWNLOADS_DIR): string | null {
+  if (!existsSync(downloadsDir)) return null;
+  for (const entry of readdirSync(downloadsDir)) {
+    if (!entry.startsWith(`${prefix}-`)) continue;
+    const filePath = join(downloadsDir, entry);
+    try {
+      if (statSync(filePath).isFile()) return filePath;
+    } catch {
+      // Skip entries that vanish between readdir and stat.
+    }
+  }
+  return null;
+}
+
+// De-dupes concurrent downloads of the same URL within this process. All
+// tool calls in a session run through one MCP server process, so without
+// this, N forks calling video_watch/video_detail for the same not-yet-cached
+// YouTube URL at once would each spawn their own yt-dlp writing to the same
+// output path — wasted bandwidth at best, a corrupted/partial file at worst.
+const inFlightDownloads = new Map<string, Promise<string>>();
+
+export async function downloadYouTubeVideo(
+  url: string,
+  downloader: (url: string, prefix: string) => Promise<string> = performYouTubeDownload,
+  downloadsDir: string = DOWNLOADS_DIR,
+): Promise<string> {
+  mkdirSync(downloadsDir, { recursive: true });
 
   const prefix = cachePrefixForUrl(url);
+
+  const cached = findCachedDownload(prefix, downloadsDir);
+  if (cached) return validateRegularFile(cached);
+
+  // Keyed by downloadsDir too so tests using isolated temp dirs can't share
+  // in-flight state with each other or with the real cache.
+  const dedupeKey = `${downloadsDir}:${prefix}`;
+  const existing = inFlightDownloads.get(dedupeKey);
+  if (existing) return existing;
+
+  const downloadPromise = downloader(url, prefix).finally(() => {
+    inFlightDownloads.delete(dedupeKey);
+  });
+  inFlightDownloads.set(dedupeKey, downloadPromise);
+  return downloadPromise;
+}
+
+async function performYouTubeDownload(url: string, prefix: string): Promise<string> {
   const outputTemplate = `${prefix}-%(id)s.%(ext)s`;
 
   try {

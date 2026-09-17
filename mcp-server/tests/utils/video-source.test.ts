@@ -5,6 +5,8 @@ import { tmpdir } from "os";
 import {
   buildCaptionAudioResult,
   cleanExpiredDownloads,
+  downloadYouTubeVideo,
+  findCachedDownload,
   getCaptionFallbackReason,
   isYouTubeUrl,
   parseSubtitleContent,
@@ -106,5 +108,78 @@ discipline &amp; the one nobody is building for yet.
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  describe("YouTube download caching and de-duplication", () => {
+    it("findCachedDownload finds a file matching the cache prefix", () => {
+      const dir = join(tmpdir(), `cvv-cache-lookup-${Date.now()}`);
+      mkdirSync(dir, { recursive: true });
+      const file = join(dir, "abc123def456-dQw4w9WgXcQ.mp4");
+      writeFileSync(file, "fake video bytes");
+
+      try {
+        expect(findCachedDownload("abc123def456", dir)).toBe(file);
+        expect(findCachedDownload("nonexistent-prefix", dir)).toBeNull();
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
+    it("skips the downloader entirely when a matching file is already cached", async () => {
+      const dir = join(tmpdir(), `cvv-cache-skip-${Date.now()}`);
+      mkdirSync(dir, { recursive: true });
+      // downloadYouTubeVideo hashes the url to a prefix internally; write a
+      // file under *some* prefix, look it up via that same prefix to avoid
+      // depending on the hash implementation directly.
+      const url = "https://youtu.be/dQw4w9WgXcQ";
+      let downloaderCalls = 0;
+      const downloader = async (_url: string, prefix: string) => {
+        downloaderCalls++;
+        const file = join(dir, `${prefix}-dQw4w9WgXcQ.mp4`);
+        writeFileSync(file, "downloaded bytes");
+        return file;
+      };
+
+      try {
+        const firstPath = await downloadYouTubeVideo(url, downloader, dir);
+        expect(downloaderCalls).toBe(1);
+
+        const secondPath = await downloadYouTubeVideo(url, downloader, dir);
+        expect(secondPath).toBe(firstPath);
+        expect(downloaderCalls).toBe(1); // not called again — served from cache
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
+    it("de-dupes concurrent downloads of the same not-yet-cached URL", async () => {
+      const dir = join(tmpdir(), `cvv-cache-concurrent-${Date.now()}`);
+      mkdirSync(dir, { recursive: true });
+      const url = "https://youtu.be/dQw4w9WgXcQ";
+      let downloaderCalls = 0;
+      const downloader = async (_url: string, prefix: string) => {
+        downloaderCalls++;
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        const file = join(dir, `${prefix}-dQw4w9WgXcQ.mp4`);
+        writeFileSync(file, "downloaded bytes");
+        return file;
+      };
+
+      try {
+        // Simulate N concurrent forks all calling video_watch for the same
+        // not-yet-cached URL at once, as happened in production.
+        const results = await Promise.all([
+          downloadYouTubeVideo(url, downloader, dir),
+          downloadYouTubeVideo(url, downloader, dir),
+          downloadYouTubeVideo(url, downloader, dir),
+          downloadYouTubeVideo(url, downloader, dir),
+        ]);
+
+        expect(downloaderCalls).toBe(1); // only one real download, not four
+        expect(new Set(results).size).toBe(1); // all callers got the same path
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
   });
 });
