@@ -13,16 +13,8 @@ import { loadConfig } from "./config.js";
 import { cleanExpiredSessions } from "./session/manager.js";
 import { cleanExpiredDownloads, getDownloadsDir } from "./utils/video-source.js";
 
-// The MCP SDK wraps each individual tool call in try/catch (see
-// CallToolRequestSchema's handler), so an error thrown inside a registered
-// tool becomes a normal error response rather than crashing the process.
-// But anything outside that path — a rejected promise nobody awaited, a
-// throw from the transport layer itself — hits Node's default handling,
-// which as of Node 15+ terminates the process on an unhandled rejection.
-// Over stdio that means the whole MCP connection dies silently with no
-// diagnostic beyond "server disconnected" on the client side. Log loudly
-// to stderr instead of dying blind; process.exit(1) still surfaces the
-// failure (and lets the client reconnect/restart) but leaves a trail.
+// Errors outside a tool handler (unhandled rejection, transport-level throw)
+// would otherwise kill the process with no diagnostic over stdio.
 process.on("uncaughtException", (error) => {
   console.error("[claude-video-vision] uncaught exception:", error);
   process.exit(1);

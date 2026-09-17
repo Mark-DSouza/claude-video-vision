@@ -118,11 +118,7 @@ export async function extractFrames(
   args.push("-i", videoPath);
 
   if (endTime) {
-    // NOTE: -to (output option, positioned after -i) is silently ignored by
-    // this ffmpeg build when combined with -vf fps=... + the image2 muxer —
-    // extraction just runs unbounded until -frames:v hits its ceiling. -t
-    // (duration, relative to the -ss seek point) is honored correctly, so
-    // convert the absolute end time to a duration instead.
+    // -to is silently ignored here under -ss input seeking; -t (duration) works.
     const startSec = startTime ? parseHMS(startTime) : 0;
     const endSec = parseHMS(endTime);
     const duration = Math.max(0, endSec - startSec);

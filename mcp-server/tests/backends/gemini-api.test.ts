@@ -276,10 +276,6 @@ describe("transcribeChunkWithRetry", () => {
     expect(onWarning).toHaveBeenCalledTimes(1);
   });
 
-  // Regression test: a bare retry with no backoff races straight back into
-  // the same rate-limit window that just rejected it. Chunks are
-  // transcribed in parallel (see analyzeWithGeminiApi), which is exactly
-  // the shape that trips the Gemini free tier's per-minute limit.
   it("waits via the injected backoff before retrying, not a bare immediate retry", async () => {
     const worker = vi.fn()
       .mockRejectedValueOnce(new Error("429 rate limited"))
@@ -291,8 +287,6 @@ describe("transcribeChunkWithRetry", () => {
     expect(result.ok).toBe(true);
     expect(delay).toHaveBeenCalledTimes(1);
     expect(delay).toHaveBeenCalledWith(3000);
-    // The delay must happen between the failed attempt and the retry, not
-    // merely at some point during the call.
     const workerSecondCallOrder = worker.mock.invocationCallOrder[1];
     const delayCallOrder = delay.mock.invocationCallOrder[0];
     expect(delayCallOrder).toBeLessThan(workerSecondCallOrder);

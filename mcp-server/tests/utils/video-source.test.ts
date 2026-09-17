@@ -128,9 +128,6 @@ discipline &amp; the one nobody is building for yet.
     it("skips the downloader entirely when a matching file is already cached", async () => {
       const dir = join(tmpdir(), `cvv-cache-skip-${Date.now()}`);
       mkdirSync(dir, { recursive: true });
-      // downloadYouTubeVideo hashes the url to a prefix internally; write a
-      // file under *some* prefix, look it up via that same prefix to avoid
-      // depending on the hash implementation directly.
       const url = "https://youtu.be/dQw4w9WgXcQ";
       let downloaderCalls = 0;
       const downloader = async (_url: string, prefix: string) => {
@@ -146,7 +143,7 @@ discipline &amp; the one nobody is building for yet.
 
         const secondPath = await downloadYouTubeVideo(url, downloader, dir);
         expect(secondPath).toBe(firstPath);
-        expect(downloaderCalls).toBe(1); // not called again — served from cache
+        expect(downloaderCalls).toBe(1);
       } finally {
         rmSync(dir, { recursive: true, force: true });
       }
@@ -166,8 +163,6 @@ discipline &amp; the one nobody is building for yet.
       };
 
       try {
-        // Simulate N concurrent forks all calling video_watch for the same
-        // not-yet-cached URL at once, as happened in production.
         const results = await Promise.all([
           downloadYouTubeVideo(url, downloader, dir),
           downloadYouTubeVideo(url, downloader, dir),
@@ -175,8 +170,8 @@ discipline &amp; the one nobody is building for yet.
           downloadYouTubeVideo(url, downloader, dir),
         ]);
 
-        expect(downloaderCalls).toBe(1); // only one real download, not four
-        expect(new Set(results).size).toBe(1); // all callers got the same path
+        expect(downloaderCalls).toBe(1);
+        expect(new Set(results).size).toBe(1);
       } finally {
         rmSync(dir, { recursive: true, force: true });
       }

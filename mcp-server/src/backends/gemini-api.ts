@@ -210,10 +210,6 @@ export type DelayFn = (ms: number) => Promise<void>;
 
 const realDelay: DelayFn = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// Chunks are transcribed in parallel (see analyzeWithGeminiApi), which is
-// exactly the shape that trips the Gemini free tier's per-minute rate
-// limit on a long video. Retrying instantly back into the same rate-limit
-// window rarely helps; a short backoff gives it a real chance to clear.
 const DEFAULT_RETRY_BACKOFF_MS = 3_000;
 
 export async function transcribeChunkWithRetry(

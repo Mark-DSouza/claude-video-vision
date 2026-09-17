@@ -183,11 +183,7 @@ export function findCachedDownload(prefix: string, downloadsDir: string = DOWNLO
   return null;
 }
 
-// De-dupes concurrent downloads of the same URL within this process. All
-// tool calls in a session run through one MCP server process, so without
-// this, N forks calling video_watch/video_detail for the same not-yet-cached
-// YouTube URL at once would each spawn their own yt-dlp writing to the same
-// output path — wasted bandwidth at best, a corrupted/partial file at worst.
+// Dedupes concurrent downloads of the same URL within this process.
 const inFlightDownloads = new Map<string, Promise<string>>();
 
 export async function downloadYouTubeVideo(
@@ -202,8 +198,6 @@ export async function downloadYouTubeVideo(
   const cached = findCachedDownload(prefix, downloadsDir);
   if (cached) return validateRegularFile(cached);
 
-  // Keyed by downloadsDir too so tests using isolated temp dirs can't share
-  // in-flight state with each other or with the real cache.
   const dedupeKey = `${downloadsDir}:${prefix}`;
   const existing = inFlightDownloads.get(dedupeKey);
   if (existing) return existing;

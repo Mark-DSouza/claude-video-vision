@@ -93,20 +93,8 @@ describe("frame extraction", () => {
       expect(files.some((file) => file.endsWith(".png"))).toBe(true);
     });
 
-    // Regression test for a bug where -to (an output option) was applied
-    // against the rebased post-seek clock rather than the original timeline
-    // whenever -ss (an input option) was also set. A nonzero startTime with
-    // an endTime well before the file's actual end reproduced it: the
-    // extraction ran for (endTime's raw seconds value) seconds *from the
-    // seek point* instead of stopping at endTime, silently pulling in far
-    // more of the video than requested (all the way to the max_frames
-    // ceiling for long videos). Every pre-existing test in this file used
-    // startTime 0 (or omitted it), where the bug is invisible, which is how
-    // it shipped undetected.
     it("bounds extraction to (endTime - startTime), not endTime's raw value", async () => {
       // 12s fixture, window [4s, 7s) at 2fps => exactly 6 frames expected.
-      // The bug would instead run ~7s from the seek point (to ~11s),
-      // yielding roughly double the frames.
       const result = await extractFrames(LONG_FIXTURE, {
         fps: 2,
         resolution: 256,
