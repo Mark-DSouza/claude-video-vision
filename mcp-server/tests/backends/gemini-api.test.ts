@@ -257,7 +257,8 @@ describe("transcribeChunkWithRetry", () => {
       .mockRejectedValueOnce(new Error("Gemini 500"))
       .mockResolvedValueOnce({ segments: [], tags: [] });
     const onWarning = vi.fn();
-    const result = await transcribeChunkWithRetry("/x.wav", 0, makeConfig(), 1, worker, onWarning);
+    const delay = vi.fn(async () => {});
+    const result = await transcribeChunkWithRetry("/x.wav", 0, makeConfig(), 1, worker, onWarning, delay);
     expect(result.ok).toBe(true);
     expect(result.attempt).toBe(1);
     expect(worker).toHaveBeenCalledTimes(2);
@@ -267,11 +268,41 @@ describe("transcribeChunkWithRetry", () => {
   it("returns ok=false after retries exhausted", async () => {
     const worker = vi.fn().mockRejectedValue(new Error("persistent fail"));
     const onWarning = vi.fn();
-    const result = await transcribeChunkWithRetry("/x.wav", 0, makeConfig(), 1, worker, onWarning);
+    const delay = vi.fn(async () => {});
+    const result = await transcribeChunkWithRetry("/x.wav", 0, makeConfig(), 1, worker, onWarning, delay);
     expect(result.ok).toBe(false);
     expect(result.attempt).toBe(2);
     expect(worker).toHaveBeenCalledTimes(2);
     expect(onWarning).toHaveBeenCalledTimes(1);
+  });
+
+  // Regression test: a bare retry with no backoff races straight back into
+  // the same rate-limit window that just rejected it. Chunks are
+  // transcribed in parallel (see analyzeWithGeminiApi), which is exactly
+  // the shape that trips the Gemini free tier's per-minute limit.
+  it("waits via the injected backoff before retrying, not a bare immediate retry", async () => {
+    const worker = vi.fn()
+      .mockRejectedValueOnce(new Error("429 rate limited"))
+      .mockResolvedValueOnce({ segments: [], tags: [] });
+    const delay = vi.fn(async () => {});
+    const result = await transcribeChunkWithRetry(
+      "/x.wav", 0, makeConfig(), 1, worker, undefined, delay, 3000,
+    );
+    expect(result.ok).toBe(true);
+    expect(delay).toHaveBeenCalledTimes(1);
+    expect(delay).toHaveBeenCalledWith(3000);
+    // The delay must happen between the failed attempt and the retry, not
+    // merely at some point during the call.
+    const workerSecondCallOrder = worker.mock.invocationCallOrder[1];
+    const delayCallOrder = delay.mock.invocationCallOrder[0];
+    expect(delayCallOrder).toBeLessThan(workerSecondCallOrder);
+  });
+
+  it("does not delay when the first attempt succeeds", async () => {
+    const worker = vi.fn(async () => ({ segments: [], tags: [] }));
+    const delay = vi.fn(async () => {});
+    await transcribeChunkWithRetry("/x.wav", 0, makeConfig(), 1, worker, undefined, delay);
+    expect(delay).not.toHaveBeenCalled();
   });
 });
 
